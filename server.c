@@ -60,121 +60,6 @@ int Base64Decode(char* b64message, char** buffer) { //Decodes a base64 encoded s
 
   return (0); //success
 }
-
-
-// void handle_client(int socket_client) {
-//     int pipe_from_base64_to_string[2];
-//     int pipe_from_string_to_base64[2];
-//     char *path;
-//     char *encoded;
-//     char *decoded;
-//     int len;
-//     int fd;
-//     struct flock fl = {
-//         .l_type = F_WRLCK,
-//         .l_whence = SEEK_SET,
-//         .l_start = 0,
-//         .l_len = 0,
-//     };
-
-//     if (pipe(pipe_from_base64_to_string) == -1) {
-//         perror("pipe");
-//         exit(1);
-//     }
-//     if (pipe(pipe_from_string_to_base64) == -1) {
-//         perror("pipe");
-//         exit(1);
-//     }
-
-//     pid_t pid_from_base64_to_string = fork();
-//     if (pid_from_base64_to_string == -1) {
-//         perror("fork");
-//         exit(1);
-//     }
-//     if (pid_from_base64_to_string == 0) {
-//         // Child process (base64 to string)
-//         close(pipe_from_base64_to_string[1]); // Close write end
-//         close(pipe_from_string_to_base64[0]); // Close read end
-
-//         // Redirect stdin from the pipe and stdout to the other pipe
-//         dup2(pipe_from_base64_to_string[0], STDIN_FILENO);
-//         dup2(pipe_from_string_to_base64[1], STDOUT_FILENO);
-//         close(pipe_from_base64_to_string[0]); // Close read end
-//         close(pipe_from_string_to_base64[1]); // Close write end
-
-//         execlp("base64", "base64", "-d", NULL);
-//         perror("execlp");
-//         exit(1);
-//     }
-//     else {
-
-//         pid_t pid_from_string_to_base64 = fork();
-
-//         if (pid_from_string_to_base64 == -1) {
-//             perror("fork");
-//             exit(1);
-//         }
-//         if (pid_from_string_to_base64 == 0) {
-//             // Child process (string to base64)
-//             close(pipe_from_base64_to_string[0]); // Close read end
-//             close(pipe_from_string_to_base64[1]); // Close write end
-
-//             // Redirect stdin from the pipe and stdout to the other pipe
-//             dup2(pipe_from_string_to_base64[0], STDIN_FILENO);
-//             dup2(pipe_from_base64_to_string[1], STDOUT_FILENO);
-//             close(pipe_from_string_to_base64[0]); // Close read end
-//             close(pipe_from_base64_to_string[1]); // Close write end
-
-//             execlp("base64", "base64", NULL);
-//             perror("execlp");
-//             exit(1);
-//         }
-//         else {
-//           // Parent process
-//           close(pipe_from_base64_to_string[0]); // Close read end
-//           close(pipe_from_string_to_base64[1]); // Close write end
-
-//           // Read from socket and write to pipe_from_socket_to_base64
-//           while ((len = recv(socket_client, buffer, sizeof(buffer) - 1, 0)) > 0) {
-//               buffer[len] = '\0';
-//               write(pipe_from_socket_to_base64[1], buffer, len);
-//           }
-//           close(pipe_from_socket_to_base64[1]); // Close write end
-
-//           // Read decoded data from pipe_from_base64_to_string
-//           len = read(pipe_from_base64_to_string[0], buffer, sizeof(buffer) - 1);
-//           buffer[len] = '\0';
-
-//           // Check if the request starts with "POST"
-//           if (strncmp(buffer, "POST", 4) != 0) {
-//               // Read the file path until the first <CRLF>
-//               path = strtok(buffer + 5, "\r\n");
-//               // Achieve a write lock on the file using fcntl
-//               fd = open(path, O_WRONLY | O_CREAT, 0644);
-//               // Write the rest of the request to the file
-//               fl.l_type = F_WRLCK;
-//               fcntl(fd, F_SETLKW, &fl);
-//               // change the offset pipe_from_base64_to_string[1] to the after the first <CRLF>
-//               lseek(pipe_from_base64_to_string[1], strlen(path) + 6, SEEK_SET);
-//               // while the buffer is not empty
-//               while ((len = read(pipe_from_base64_to_string[1], buffer, sizeof(buffer) - 1)) > 0) {
-//                   buffer[len] = '\0';
-//                   write(fd, buffer, len);
-//                   // recv from socket and write to pipe_from_socket_to_base64
-//                   if ((len = recv(socket_client, buffer, sizeof(buffer) - 1, 0)) > 0) {
-//                       buffer[len] = '\0';
-//                       write(pipe_from_base64_to_string[0], buffer, len);
-//                   }
-//               }
-//               fl.l_type = F_UNLCK;
-//               fcntl(fd, F_SETLK, &fl);
-//               close(fd);
-
-//           }
-//         }
-//     }
-// }
-
  
 void handle_client(int socket_client) {
     char buffer[1024];
@@ -204,28 +89,56 @@ void handle_client(int socket_client) {
         }
 
         if (fcntl(fd, F_SETLKW, &fl) == -1) {
-            perror("fcntl");
+            sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
+            send(socket_client, msg, strlen(msg), 0);
             exit(1);
         }
-            while (1) {
-                len = recv(socket_client, buffer, sizeof(buffer) - 1, 0);
-                if (len <= 0) break; // End of transmission
-                Base64Decode(buffer, len, buffer, sizeof(buffer));
-                write(fd, buffer, len);
-            }
-
-            // Read the encoded data from the encoder and write it to the file
-            while (1) {
-                len = read(fd, buffer, sizeof(buffer) - 1);
-                if (len <= 0) break; // End of transmission
-                Base64Decode(buffer, len, buffer, sizeof(buffer));
-                write(fd, buffer, len);
-            }
-
-            // Release the lock
-            fl.l_type = F_UNLCK;
-            fcntl(fd, F_SETLK, &fl);
-            // Close the file
-            close(fd);
+        while (1) {
+            len = recv(socket_client, buffer, sizeof(buffer) - 1, 0);
+            if (len <= 0) break; // End of transmission
+            Base64Decode(buffer, len, buffer, sizeof(buffer));
+            write(fd, buffer, len);
         }
+
+        // Release the lock
+        fl.l_type = F_UNLCK;
+        fcntl(fd, F_SETLK, &fl);
+        // Close the file
+        close(fd);
     }
+    else if (strncmp(buffer, "GET", 3) != 0) {
+        // Read the file path until the first <CRLF>
+        char *path = strtok(buffer + 4, "\r\n");
+        // Achieve a read lock on the file using fcntl
+        int fd = open(path, O_RDONLY);
+        
+        // Return an error if the file does not exist (404 File Not Found)
+        if (fd == -1) {
+            sprintf(msg, "HTTP/1.1 404 Not Found\r\n\r\n");
+            send(socket_client, msg, strlen(msg), 0);
+            exit(1);
+        }
+
+        if (fcntl(fd, F_SETLKW, &fl) == -1) {
+            sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
+            send(socket_client, msg, strlen(msg), 0);
+            exit(1);
+        }
+        while (1) {
+            len = read(fd, buffer, sizeof(buffer) - 1);
+            if (len <= 0) break; // End of transmission
+            Base64Encode(buffer, len, buffer, sizeof(buffer));
+            send(socket_client, buffer, len, 0);
+        }
+
+        // Release the lock
+        fl.l_type = F_UNLCK;
+        fcntl(fd, F_SETLK, &fl);
+        // Close the file
+        close(fd);
+    }
+    else {
+        sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
+        send(socket_client, msg, strlen(msg), 0);
+    }
+  }
