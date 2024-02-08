@@ -1,13 +1,23 @@
-#include <openssl/bio.h>
-#include <openssl/evp.h>
-#include <string.h>
-#include <stdio.h>
-#include <math.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <netinet/in.h>
+#include <openssl/bio.h> //BIO, BIO_new, BIO_free_all, BIO_push, BIO_set_flags, BIO_read, BIO_write, BIO_flush
+#include <openssl/evp.h> //EVP_DecodeBlock
+#include <string.h> //strlen
+#include <stdio.h> //FILE, fmemopen, fclose
+#include <math.h> //ceil
+#include <stdlib.h> //malloc and free
+#include <unistd.h> 
+#include <netinet/in.h> // sockaddr_in
+#include <sys/socket.h> // socket functions
+#include <sys/types.h> // socket types
+#include <sys/wait.h> // waitpid and WNOHANG
+#include <signal.h> // signal
+#include <errno.h> // errno 
+#include <arpa/inet.h> // inet_ntop and inet_pton
+#include <netdb.h> // getnameinfo and getaddrinfo
+#include <fcntl.h> // fcntl
 
+
+# define PORT "8080" // Default port for the server
+# define BACKLOG 100 // Maximum number of pending connections for TCP socket
 
 int Base64Encode(const char* message, char** buffer) { //Encodes a string to base64
   BIO *bio, *b64;
@@ -61,7 +71,9 @@ int Base64Decode(char* b64message, char** buffer) { //Decodes a base64 encoded s
   return (0); //success
 }
  
-void handle_client(int socket_client) {
+void handle_client(int socket_client, char * home_path) {
+    char * encoded_str;
+    char * decoded_str;
     char buffer[1024];
     char msg[1024];
     struct flock fl = {
@@ -78,8 +90,9 @@ void handle_client(int socket_client) {
     if (strncmp(buffer, "POST", 4) != 0) {
         // Read the file path until the first <CRLF>
         char *path = strtok(buffer + 5, "\r\n");
+        char * file_path = malloc(strlen(home_path) + strlen(path) + 1);
         // Achieve a write lock on the file using fcntl
-        int fd = open(path, O_WRONLY | O_CREAT, 0644);
+        int fd = open(file_path, O_WRONLY | O_CREAT, 0644);
         
         // Return an error if the file does not exist (404 File Not Found)
         if (fd == -1) {
@@ -96,8 +109,9 @@ void handle_client(int socket_client) {
         while (1) {
             len = recv(socket_client, buffer, sizeof(buffer) - 1, 0);
             if (len <= 0) break; // End of transmission
-            Base64Decode(buffer, len, buffer, sizeof(buffer));
-            write(fd, buffer, len);
+            buffer[len] = '\0';
+            Base64Decode(buffer, &decoded_str);
+            write(fd, decoded_str, len);
         }
 
         // Release the lock
@@ -108,10 +122,10 @@ void handle_client(int socket_client) {
     }
     else if (strncmp(buffer, "GET", 3) != 0) {
         // Read the file path until the first <CRLF>
-        char *path = strtok(buffer + 4, "\r\n");
+        char *path = strtok(buffer + 4, "\r\n\r\n");
+        char * file_path = malloc(strlen(home_path) + strlen(path) + 1);
         // Achieve a read lock on the file using fcntl
-        int fd = open(path, O_RDONLY);
-        
+        int fd = open(file_path, O_RDONLY);
         // Return an error if the file does not exist (404 File Not Found)
         if (fd == -1) {
             sprintf(msg, "HTTP/1.1 404 Not Found\r\n\r\n");
@@ -127,8 +141,8 @@ void handle_client(int socket_client) {
         while (1) {
             len = read(fd, buffer, sizeof(buffer) - 1);
             if (len <= 0) break; // End of transmission
-            Base64Encode(buffer, len, buffer, sizeof(buffer));
-            send(socket_client, buffer, len, 0);
+            Base64Encode(buffer, &encoded_str);
+            send(socket_client, encoded_str, len, 0);
         }
 
         // Release the lock
@@ -141,4 +155,117 @@ void handle_client(int socket_client) {
         sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
         send(socket_client, msg, strlen(msg), 0);
     }
+  }
+
+  // this function is used for extracting the client's IP address
+  void *get_in_addr(struct sockaddr *sa) {
+    if (sa->sa_family == AF_INET) {
+      return &(((struct sockaddr_in*)sa)->sin_addr);
+    }
+
+    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+  }
+
+  // this function use for SIGCHLD signal to handle child process to prevent zombie process and
+  // allow the child process to be terminated properly
+  void sigchld_handler(int s) {
+    // waitpid() might overwrite errno, so we save and restore it:
+    int saved_errno = errno;
+
+    while(waitpid(-1, NULL, WNOHANG) > 0);
+
+    errno = saved_errno;
+  }
+
+  int main (int argc, char * argv []) {
+    int socket_server, socket_client;
+    struct addrinfo hints, *serv_info, *p;
+    struct sockaddr_storage client_addr;
+    socklen_t addr_size; // sizeof(client_addr);
+    struct sigaction sa; // Signal handler defined for the child process to prevent zombie processes
+    int yes = 1;
+    char ipstr[INET6_ADDRSTRLEN]; // String to store the client's IP address
+    int rv;
+
+    // get from the command line argument the home directory
+    if (argc != 2) {
+      fprintf(stderr, "usage: ./server <home_directory>\n");
+      exit(1);
+    }
+
+    char * home_path = argv[1];
+
+    memset(&hints, 0, sizeof(hints)); // allocate memory for hints
+    hints.ai_family = AF_UNSPEC; // IPv4 or IPv6
+    hints.ai_socktype = SOCK_STREAM; // for TCP
+    hints.ai_flags = AI_PASSIVE; // use my IP
+
+    // Search for the server's address information
+    if ((rv = getaddrinfo(NULL, PORT, &hints, &serv_info)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        return 1;
+    }
+
+    // Loop through all the results and bind to the first we can
+    for (p = serv_info; p != NULL; p = p->ai_next) {
+        if ((socket_server = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+            perror("server: socket");
+            continue;
+        }
+
+        if (setsockopt(socket_server, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+            perror("setsockopt");
+            exit(1);
+        }
+
+        if (bind(socket_server, p->ai_addr, p->ai_addrlen) == -1) {
+            close(socket_server);
+            perror("server: bind");
+            continue;
+        }
+
+        break;
+    }
+
+    freeaddrinfo(serv_info); // destroy the linked list
+
+    if (p == NULL) {
+        fprintf(stderr, "server: failed to bind\n");
+        exit(1);
+    }
+
+    if (listen(socket_server, BACKLOG) == -1) {
+        perror("listen");
+        exit(1);
+    }
+
+    // change the signal handler to sigchld_handler to prevent zombie processes
+    if (signal(SIGCHLD, sigchld_handler) == SIG_ERR) {
+        perror("signal");
+        exit(1);
+    }
+
+    printf("server: waiting for connections...\n");
+
+    while(1) {
+        addr_size = sizeof(client_addr);
+        socket_client = accept(socket_server, (struct sockaddr *)&client_addr, &addr_size);
+        if (socket_client == -1) {
+            perror("accept");
+            continue;
+        }
+        
+        // extract the client's IP address and print it
+        inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *)&client_addr), ipstr, sizeof(ipstr));
+        printf("server: got connection from %s\n", ipstr);
+
+        if (!fork()) { // this is the child process
+            close(socket_server); // child doesn't need the listener
+            handle_client(socket_client, home_path);
+            close(socket_client);
+            exit(0);
+        }
+        close(socket_client); // parent doesn't need this
+    }
+    return 0;
   }
