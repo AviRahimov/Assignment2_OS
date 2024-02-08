@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in serv_addr;
     struct hostent *server;
 
-    char buffer[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE]; // this is the content of the file that appears in the socket
 
     if (argc < 4) {
        fprintf(stderr,"usage %s hostname operation[GET/POST] remote_path [local_path_for_POST]\n", argv[0]);
@@ -151,7 +151,9 @@ int main(int argc, char *argv[]) {
         size_t bytesRead;
         while ((bytesRead = fread(fileBuffer, 1, BUFFER_SIZE, file)) > 0) {
             size_t encodedSize;
-            char* encodedContent = base64_encode((const unsigned char*)fileBuffer, bytesRead, &encodedSize);
+            char* encodedContent;
+            Base64Encode((const unsigned char*)fileBuffer, &encodedContent);
+            encodedSize = strlen(encodedContent);
 
             // Directly write the encoded content to the socket
             if (write(sockfd, encodedContent, encodedSize) < 0) {
@@ -182,7 +184,10 @@ int main(int argc, char *argv[]) {
         close(sockfd);
         exit(1);
     }
-    printf("Server response: %s\n", buffer);
+    char* decodedContent;
+    Base64Decode(buffer, &decodedContent);
+    printf("Server response: %s\n", decodedContent);
+    free(decodedContent);
 
     while (read(sockfd, buffer, BUFFER_SIZE - 1) > 0)
     {
@@ -190,7 +195,7 @@ int main(int argc, char *argv[]) {
         memset(buffer, 0, BUFFER_SIZE);
     }
     
-
+    
     close(sockfd);
     return 0;
 }
