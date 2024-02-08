@@ -100,30 +100,47 @@ int main(int argc, char *argv[]) {
         printf("GET request sent.\n");
     }
     else if (strcmp(operation, "POST") == 0 && localPath != NULL) {
-        char* fileContent;
-        ssize_t bytesRead = readFile(localPath, &fileContent);
-        if (bytesRead < 0) {
-            error("ERROR reading file to post");
+        // Open the file for reading
+        FILE* file = fopen(localPath, "rb");
+        if (!file) {
+            error("ERROR opening file for POST");
         }
 
-        size_t encodedSize;
-        char* encodedContent = base64_encode((const unsigned char*)fileContent, bytesRead, &encodedSize);
-
-        printf("Sending POST request for: %s with data from %s\n", remotePath, localPath);
-        snprintf(buffer, BUFFER_SIZE, "POST %s \r\n%s\r\n\r\n", remotePath, encodedContent);
+        // Prepare and send the POST request line
+        snprintf(buffer, BUFFER_SIZE, "POST %s\r\n", remotePath);
         if (write(sockfd, buffer, strlen(buffer)) < 0) {
-            perror("Error writing to socket");
+            perror("Error writing initial POST line to socket");
+            fclose(file);
             exit(1);
         }
-        printf("POST request sent.\n");
 
-        free(fileContent);
-        free(encodedContent);
-    }
-    else {
-        fprintf(stderr, "Invalid operation or missing local path for POST\n");
-        close(sockfd);
-        exit(1);
+        // Initialize buffer for reading file content
+        char fileBuffer[BUFFER_SIZE];
+        size_t bytesRead;
+        while ((bytesRead = fread(fileBuffer, 1, BUFFER_SIZE, file)) > 0) {
+            size_t encodedSize;
+            char* encodedContent = base64_encode((const unsigned char*)fileBuffer, bytesRead, &encodedSize);
+
+            // Directly write the encoded content to the socket
+            if (write(sockfd, encodedContent, encodedSize) < 0) {
+                perror("Error writing encoded chunk to socket");
+                fclose(file);
+                free(encodedContent);
+                exit(1);
+            }
+
+            // Free the encoded content after sending
+            free(encodedContent);
+        }
+
+        // Send the final CRLF to indicate the end of the request
+        if (write(sockfd, "\r\n\r\n", 4) < 0) {
+            perror("Error writing final CRLF to socket");
+            fclose(file);
+            exit(1);
+        }
+
+        fclose(file); // Close the file after sending all chunks
     }
 
     // Common part for reading the response
@@ -134,6 +151,13 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
     printf("Server response: %s\n", buffer);
+
+    while (read(sockfd, buffer, BUFFER_SIZE - 1) > 0)
+    {
+        printf("%s", buffer);
+        memset(buffer, 0, BUFFER_SIZE);
+    }
+    
 
     close(sockfd);
     return 0;

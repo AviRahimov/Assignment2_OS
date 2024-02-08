@@ -117,6 +117,11 @@ void handle_client(int socket_client, char * home_path) {
         while (1) {
             // Ensure null termination before decoding
             data[len] = '\0';
+            if (len == 0) {
+                len = recv(socket_client, buffer, sizeof(buffer) - 1, 0);
+                data = buffer; // Reset pointer to the start of the buffer for new data
+                data[len] = '\0';
+            }
             // Check if the buffer ends with "\r\n\r\n" then break, not included in the file
             if ((len >=4) && strcmp(data + len - 4, "\r\n\r\n") == 0) {
                 len -= 4;
@@ -132,6 +137,7 @@ void handle_client(int socket_client, char * home_path) {
                 free(decoded_str); // Free decoded_str after use
                 len = recv(socket_client, buffer, sizeof(buffer) - 1, 0);
                 data = buffer; // Reset pointer to the start of the buffer for new data
+                data[len] = '\0';
             }
         }
 
@@ -191,7 +197,7 @@ void handle_client(int socket_client, char * home_path) {
         exit(1);
     }
     // send the response to the client
-    sprintf(msg, "HTTP/1.1 200 OK\r\n\r\n");
+    sprintf(msg, "\nHTTP/1.1 200 OK\r\n\r\n");
     send(socket_client, msg, strlen(msg), 0);
   }
 
