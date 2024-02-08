@@ -6,6 +6,8 @@
 #include <netinet/in.h>
 #include <netdb.h> // For struct hostent
 #include <openssl/bio.h> 
+#include <openssl/evp.h>
+#include <math.h>
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
@@ -33,6 +35,17 @@ int Base64Encode(const char* message, char** buffer) { //Encodes a string to bas
   fclose(stream);
 
   return (0); //success
+}
+int calcDecodeLength(const char* b64input) { //Calculates the length of a decoded base64 string
+  int len = strlen(b64input);
+  int padding = 0;
+
+  if (b64input[len-1] == '=' && b64input[len-2] == '=') //last two chars are =
+    padding = 2;
+  else if (b64input[len-1] == '=') //last char is =
+    padding = 1;
+
+  return (int)len*0.75 - padding;
 }
 
 int Base64Decode(char* b64message, char** buffer) { //Decodes a base64 encoded string
@@ -184,10 +197,11 @@ int main(int argc, char *argv[]) {
         close(sockfd);
         exit(1);
     }
-    char* decodedContent;
-    Base64Decode(buffer, &decodedContent);
-    printf("Server response: %s\n", decodedContent);
-    free(decodedContent);
+    // char* decodedContent;
+    // Base64Decode(buffer, &decodedContent);
+    // printf("Server response: %s\n", decodedContent);
+    printf("Server response: %s\n", buffer);
+    // free(decodedContent);
 
     while (read(sockfd, buffer, BUFFER_SIZE - 1) > 0)
     {

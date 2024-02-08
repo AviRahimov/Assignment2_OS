@@ -104,7 +104,8 @@ void handle_client(int socket_client, char * home_path) {
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
         }
-        if (fcntl(fd, F_SETLKW, &fl) == -1) {
+        
+        if (fcntl(fd, F_SETLK, &fl) == -1) { // acquire the lock on the current proccess 
             sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
@@ -303,13 +304,14 @@ void handle_client(int socket_client, char * home_path) {
         inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *)&client_addr), ipstr, sizeof(ipstr));
         printf("server: got connection from %s\n", ipstr);
 
-        // if (!fork()) { // this is the child process
-        //     close(socket_server); // child doesn't need the listener
-        //     handle_client(socket_client, home_path);
-        //     close(socket_client);
-        //     exit(0);
-        // }
-        handle_client(socket_client, home_path);
+        if (!fork()) { // this is the child process
+            close(socket_server); // child doesn't need the listener
+            handle_client(socket_client, home_path);
+            close(socket_client);
+            exit(0);
+        }
+
+        // handle_client(socket_client, home_path);
         close(socket_client); // parent doesn't need this
     }
     return 0;
