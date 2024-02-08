@@ -126,15 +126,15 @@ void handle_client(int socket_client, char * home_path) {
             if ((len >=4) && strcmp(data + len - 4, "\r\n\r\n") == 0) {
                 len -= 4;
                 data[len] = '\0';
-                Base64Decode(data, &decoded_str); // Assuming this function allocates memory for decoded_str
-                write(fd, decoded_str, strlen(decoded_str)); // Use strlen(decoded_str) to get the correct length
-                free(decoded_str); // Free decoded_str after use
+                //Base64Decode(data, &decoded_str); // Assuming this function allocates memory for decoded_str
+                write(fd, data, strlen(data)); // Use strlen(decoded_str) to get the correct length
+                //free(decoded_str); // Free decoded_str after use
                 break;
             }
             else {
-                Base64Decode(data, &decoded_str); // Assuming this function allocates memory for decoded_str
-                write(fd, decoded_str, strlen(decoded_str)); // Use strlen(decoded_str) to get the correct length
-                free(decoded_str); // Free decoded_str after use
+                //Base64Decode(data, &decoded_str); // Assuming this function allocates memory for decoded_str
+                write(fd, data, strlen(data)); // Use strlen(decoded_str) to get the correct length
+                //free(decoded_str); // Free decoded_str after use
                 len = recv(socket_client, buffer, sizeof(buffer) - 1, 0);
                 data = buffer; // Reset pointer to the start of the buffer for new data
                 data[len] = '\0';
@@ -177,9 +177,9 @@ void handle_client(int socket_client, char * home_path) {
         while (1) {
             len = read(fd, buffer, sizeof(buffer) - 1);
             if (len <= 0) break; // End of transmission
-            Base64Encode(buffer, &encoded_str);
-            len = strlen(encoded_str);
-            send(socket_client, encoded_str, len, 0);
+            //Base64Encode(buffer, &encoded_str);
+            len = strlen(buffer);
+            send(socket_client, buffer, len, 0);
         }
 
         // Release the lock
