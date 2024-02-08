@@ -75,6 +75,7 @@ void handle_client(int socket_client, char * home_path) {
     char * encoded_str;
     char * decoded_str;
     char buffer[1024];
+    char * data;
     char msg[1024];
     struct flock fl = {
         .l_type = F_WRLCK,
@@ -85,56 +86,85 @@ void handle_client(int socket_client, char * home_path) {
     
     int len = recv(socket_client, buffer, sizeof(buffer) - 1, 0);
     buffer[len] = '\0';
-
+    printf("Request: %s\n", buffer);
     // Check if the request starts with "POST"
-    if (strncmp(buffer, "POST", 4) != 0) {
+    if (strncmp(buffer, "POST", 4) == 0) {
         // Read the file path until the first <CRLF>
         char *path = strtok(buffer + 5, "\r\n");
-        char * file_path = malloc(strlen(home_path) + strlen(path) + 1);
+        char * file_path = (char *) malloc(strlen(home_path) + strlen(path) + 1);
+        file_path[0] = '\0';
+        strcat(file_path, home_path);
+        strcat(file_path, path);
+        printf("File path: %s\n", file_path);
         // Achieve a write lock on the file using fcntl
         int fd = open(file_path, O_WRONLY | O_CREAT, 0644);
-        
         // Return an error if the file does not exist (404 File Not Found)
         if (fd == -1) {
             sprintf(msg, "HTTP/1.1 404 Not Found\r\n\r\n");
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
         }
-
         if (fcntl(fd, F_SETLKW, &fl) == -1) {
             sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
         }
+
+        // read the data from the buffer, start from the first <CRLF> after the first <CRLF>
+        data = buffer + 5 + strlen(path) + 2; // 5 is the length of "POST ", 2 is the length of <CRLF>
+        len = len - (data - buffer); // Adjust len based on the new start position
+        
         while (1) {
-            len = recv(socket_client, buffer, sizeof(buffer) - 1, 0);
-            if (len <= 0) break; // End of transmission
-            buffer[len] = '\0';
-            Base64Decode(buffer, &decoded_str);
-            write(fd, decoded_str, len);
+            // Ensure null termination before decoding
+            data[len] = '\0';
+            // Check if the buffer ends with "\r\n\r\n" then break, not included in the file
+            if ((len >=4) && strcmp(data + len - 4, "\r\n\r\n") == 0) {
+                len -= 4;
+                data[len] = '\0';
+                Base64Decode(data, &decoded_str); // Assuming this function allocates memory for decoded_str
+                write(fd, decoded_str, strlen(decoded_str)); // Use strlen(decoded_str) to get the correct length
+                free(decoded_str); // Free decoded_str after use
+                break;
+            }
+            else {
+                Base64Decode(data, &decoded_str); // Assuming this function allocates memory for decoded_str
+                write(fd, decoded_str, strlen(decoded_str)); // Use strlen(decoded_str) to get the correct length
+                free(decoded_str); // Free decoded_str after use
+                len = recv(socket_client, buffer, sizeof(buffer) - 1, 0);
+                data = buffer; // Reset pointer to the start of the buffer for new data
+            }
         }
 
         // Release the lock
         fl.l_type = F_UNLCK;
         fcntl(fd, F_SETLK, &fl);
+        // free the memory
+        free(file_path);
         // Close the file
         close(fd);
     }
-    else if (strncmp(buffer, "GET", 3) != 0) {
+    else if (strncmp(buffer, "GET", 3) == 0) {
         // Read the file path until the first <CRLF>
         char *path = strtok(buffer + 4, "\r\n\r\n");
-        char * file_path = malloc(strlen(home_path) + strlen(path) + 1);
-        // Achieve a read lock on the file using fcntl
+        // concatenate the home path with the file path
+        char * file_path = (char *) malloc(strlen(home_path) + strlen(path) + 1);
+        file_path[0] = '\0';
+        strcat(file_path, home_path);
+        strcat(file_path, path);        
+        // open the file in read-only mode, if it does not exist, return an error
         int fd = open(file_path, O_RDONLY);
         // Return an error if the file does not exist (404 File Not Found)
         if (fd == -1) {
             sprintf(msg, "HTTP/1.1 404 Not Found\r\n\r\n");
+            perror("open");
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
         }
-
+        // put a read lock on the file
+        fl.l_type = F_RDLCK;
         if (fcntl(fd, F_SETLKW, &fl) == -1) {
             sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
+            perror("fcntl");
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
         }
@@ -142,19 +172,27 @@ void handle_client(int socket_client, char * home_path) {
             len = read(fd, buffer, sizeof(buffer) - 1);
             if (len <= 0) break; // End of transmission
             Base64Encode(buffer, &encoded_str);
+            len = strlen(encoded_str);
             send(socket_client, encoded_str, len, 0);
         }
 
         // Release the lock
         fl.l_type = F_UNLCK;
         fcntl(fd, F_SETLK, &fl);
+        // free the memory
+        free(file_path);
         // Close the file
         close(fd);
     }
     else {
         sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
+        printf("Invalid request\n");
         send(socket_client, msg, strlen(msg), 0);
+        exit(1);
     }
+    // send the response to the client
+    sprintf(msg, "HTTP/1.1 200 OK\r\n\r\n");
+    send(socket_client, msg, strlen(msg), 0);
   }
 
   // this function is used for extracting the client's IP address
@@ -259,12 +297,13 @@ void handle_client(int socket_client, char * home_path) {
         inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *)&client_addr), ipstr, sizeof(ipstr));
         printf("server: got connection from %s\n", ipstr);
 
-        if (!fork()) { // this is the child process
-            close(socket_server); // child doesn't need the listener
-            handle_client(socket_client, home_path);
-            close(socket_client);
-            exit(0);
-        }
+        // if (!fork()) { // this is the child process
+        //     close(socket_server); // child doesn't need the listener
+        //     handle_client(socket_client, home_path);
+        //     close(socket_client);
+        //     exit(0);
+        // }
+        handle_client(socket_client, home_path);
         close(socket_client); // parent doesn't need this
     }
     return 0;

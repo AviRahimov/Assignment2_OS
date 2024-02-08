@@ -6,7 +6,7 @@
 #include <netinet/in.h>
 #include <netdb.h> // For struct hostent
 
-#define PORT 3490
+#define PORT 8080
 #define BUFFER_SIZE 1024
 
 void error(const char *msg) {
@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
 
     if (strcmp(operation, "GET") == 0) {
         printf("Sending GET request for: %s\n", remotePath);
-        snprintf(buffer, BUFFER_SIZE, "GET %s \r\n\r\n", remotePath);
+        snprintf(buffer, BUFFER_SIZE, "GET %s\r\n\r\n", remotePath);
         if (write(sockfd, buffer, strlen(buffer)) < 0) {
             perror("Error writing to socket");
             exit(1);
