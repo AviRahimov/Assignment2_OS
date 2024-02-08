@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h> // For struct hostent
+#include <openssl/bio.h> 
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
@@ -15,13 +16,44 @@ void error(const char *msg) {
 }
 
 // Placeholder for actual Base64 encode/decode functions
-char* base64_encode(const unsigned char *input, size_t input_length, size_t *output_length) {
-    // Implement base64 encoding or use a library
-    *output_length = input_length;
-    char* output = (char*)malloc(input_length + 1); // Ensure allocation is cast to char*
-    strncpy(output, (const char*)input, input_length);
-    output[input_length] = '\0'; // Null-terminate the string
-    return output;
+int Base64Encode(const char* message, char** buffer) { //Encodes a string to base64
+  BIO *bio, *b64;
+  FILE* stream;
+  int encodedSize = 4*ceil((double)strlen(message)/3);
+  *buffer = (char *)malloc(encodedSize+1);
+
+  stream = fmemopen(*buffer, encodedSize+1, "w");
+  b64 = BIO_new(BIO_f_base64());
+  bio = BIO_new_fp(stream, BIO_NOCLOSE);
+  bio = BIO_push(b64, bio);
+  BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Ignore newlines - write everything in one line
+  BIO_write(bio, message, strlen(message));
+  BIO_flush(bio);
+  BIO_free_all(bio);
+  fclose(stream);
+
+  return (0); //success
+}
+
+int Base64Decode(char* b64message, char** buffer) { //Decodes a base64 encoded string
+  BIO *bio, *b64;
+  int decodeLen = calcDecodeLength(b64message),
+      len = 0;
+  *buffer = (char*)malloc(decodeLen+1);
+  FILE* stream = fmemopen(b64message, strlen(b64message), "r");
+
+  b64 = BIO_new(BIO_f_base64());
+  bio = BIO_new_fp(stream, BIO_NOCLOSE);
+  bio = BIO_push(b64, bio);
+  BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Do not use newlines to flush buffer
+  len = BIO_read(bio, *buffer, strlen(b64message));
+    //Can test here if len == decodeLen - if not, then return an error
+  (*buffer)[len] = '\0';
+
+  BIO_free_all(bio);
+  fclose(stream);
+
+  return (0); //success
 }
 
 ssize_t readFile(const char* filename, char** buffer) {
