@@ -179,7 +179,7 @@ void handle_client(int socket_client, char * home_path) {
             len = read(fd, buffer, sizeof(buffer) - 1);
             if (len <= 0) break; // End of transmission
             //Base64Encode(buffer, &encoded_str);
-            len = strlen(buffer);
+            // len = strlen(buffer);
             send(socket_client, buffer, len, 0);
         }
 
@@ -304,14 +304,14 @@ void handle_client(int socket_client, char * home_path) {
         inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *)&client_addr), ipstr, sizeof(ipstr));
         printf("server: got connection from %s\n", ipstr);
 
-        if (!fork()) { // this is the child process
-            close(socket_server); // child doesn't need the listener
-            handle_client(socket_client, home_path);
-            close(socket_client);
-            exit(0);
-        }
+        // if (!fork()) { // this is the child process
+        //     close(socket_server); // child doesn't need the listener
+        //     handle_client(socket_client, home_path);
+        //     close(socket_client);
+        //     exit(0);
+        // }
 
-        // handle_client(socket_client, home_path);
+        handle_client(socket_client, home_path);
         close(socket_client); // parent doesn't need this
     }
     return 0;
