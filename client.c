@@ -162,11 +162,13 @@ int main(int argc, char *argv[]) {
         // Initialize buffer for reading file content
         char fileBuffer[BUFFER_SIZE];
         size_t bytesRead;
-        while ((bytesRead = fread(fileBuffer, 1, BUFFER_SIZE, file)) > 0) {
+        while ((bytesRead = fread(fileBuffer, 1, BUFFER_SIZE -1, file)) > 0) {
             size_t encodedSize;
             char* encodedContent;
-            Base64Encode((const unsigned char*)fileBuffer, &encodedContent);
+            fileBuffer[bytesRead] = '\0'; // Null-terminate the buffer
+            Base64Encode((const char*)fileBuffer, &encodedContent);
             encodedSize = strlen(encodedContent);
+            printf("Sending chunk of size %zu\n", encodedSize);
 
             // Directly write the encoded content to the socket
             if (write(sockfd, encodedContent, encodedSize) < 0) {
