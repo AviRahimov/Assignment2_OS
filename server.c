@@ -245,7 +245,7 @@ void handle_client(int socket_client, char * home_path) {
     hints.ai_socktype = SOCK_STREAM; // for TCP
     hints.ai_flags = AI_PASSIVE; // use my IP
 
-    // Search for the server's address information
+    // Get the server's address information
     if ((rv = getaddrinfo(NULL, PORT, &hints, &serv_info)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
