@@ -66,7 +66,7 @@ Before running the server and client, you need to compile the source code. Make 
 #### Running the Server
 To start the server, run the following command in the terminal where you compiled the server, replacing <home_directory> with the path to the directory you want to use as the home directory for the server:
 `./server <home_directory>`
-Example:
+1. Example:
     ```bash
     ./server ../Assignment2_OS/
 
