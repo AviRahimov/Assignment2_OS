@@ -134,8 +134,10 @@ int main(int argc, char *argv[]) {
     memcpy(&serv_addr.sin_addr.s_addr, server->h_addr_list[0], server->h_length);
     serv_addr.sin_port = htons(PORT);
 
-    if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
+    if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
+        close(sockfd);
         error("ERROR connecting");
+    }
 
     if (strcmp(operation, "GET") == 0) {
         printf("Sending GET request for: %s\n", remotePath);
