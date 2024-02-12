@@ -50,13 +50,13 @@ void handle_client(int socket_client, char * home_path) {
         int fd = open(file_path, O_WRONLY | O_CREAT, 0644);
         // Return an error if the file does not exist (404 File Not Found)
         if (fd == -1) {
-            sprintf(msg, "HTTP/1.1 404 Not Found\r\n\r\n");
+            sprintf(msg, "404 Not Found\r\n\r\n");
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
         }
         
         if (fcntl(fd, F_SETLK, &fl) == -1) { // acquire the lock on the current proccess 
-            sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
+            sprintf(msg, "500 Internal Server Error\r\n\r\n");
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
         }
@@ -99,6 +99,9 @@ void handle_client(int socket_client, char * home_path) {
         free(file_path);
         // Close the file
         close(fd);
+        // send the response to the client
+        sprintf(msg, "\n200 OK\r\n\r\n");
+        send(socket_client, msg, strlen(msg), 0);
     }
     else if (strncmp(buffer, "GET", 3) == 0) {
         // Read the file path until the first <CRLF>
@@ -112,7 +115,7 @@ void handle_client(int socket_client, char * home_path) {
         int fd = open(file_path, O_RDONLY);
         // Return an error if the file does not exist (404 File Not Found)
         if (fd == -1) {
-            sprintf(msg, "HTTP/1.1 404 Not Found\r\n\r\n");
+            sprintf(msg, "404 Not Found\r\n\r\n");
             perror("open");
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
@@ -120,7 +123,7 @@ void handle_client(int socket_client, char * home_path) {
         // put a read lock on the file
         fl.l_type = F_RDLCK;
         if (fcntl(fd, F_SETLKW, &fl) == -1) {
-            sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
+            sprintf(msg, "500 Internal Server Error\r\n\r\n");
             perror("fcntl");
             send(socket_client, msg, strlen(msg), 0);
             exit(1);
@@ -142,14 +145,11 @@ void handle_client(int socket_client, char * home_path) {
         close(fd);
     }
     else {
-        sprintf(msg, "HTTP/1.1 500 Internal Server Error\r\n\r\n");
+        sprintf(msg, "500 Internal Server Error\r\n\r\n");
         printf("Invalid request\n");
         send(socket_client, msg, strlen(msg), 0);
         exit(1);
     }
-    // send the response to the client
-    sprintf(msg, "\nHTTP/1.1 200 OK\r\n\r\n");
-    send(socket_client, msg, strlen(msg), 0);
   }
 
   // this function is used for extracting the client's IP address
