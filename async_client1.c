@@ -80,6 +80,11 @@ void file_handler (char * file_path, int sock_fd) {
             break;
         }
         buffer[numbytes] = '\0';
+        // if buffer ends with "HTTP/1.1 200 OK <CRLF><CRLF>" then remove it from the buffer and break
+        if (ends_with(buffer, "\nHTTP/1.1 200 OK\r\n\r\n")) {
+            buffer[numbytes-19] = '\0';
+            numbytes -= 19;
+        }
         if (write(file_fd, buffer, numbytes) < 0) {
             perror("Error writing to file");
             exit(1);
@@ -137,16 +142,44 @@ void list_file_handler(char *file_path, int sock_fd) {
             // remove the newline character
             buffer[numbytes-1] = '\0';
             printf("Received file path: %s\n", buffer);
-            if (ends_with(buffer, ".list")) {
-                // read the first word in the file
-                char *first_word = strtok(buffer, " ");
-                // create new socket file using open for the new host name, but use the same port
-                // TO DO
-                // ....
-                list_file_handler(buffer, sock_fd);
-            } else {
-                file_handler(buffer, sock_fd);
+            // / create new socket file using open for the new host name, but use the same port
+            // TO DO
+            // ....
+            // clone the socket file descriptor and connect to the new host
+            close (sock_fd);
+            int new_sock_fd = sock_fd;
+            char *first_word = strtok(buffer, " ");
+            // connect to the server which is address in the first word of the file
+            // using DNS lookup to get the address
+            struct addrinfo hints, *servinfo, *p;
+            int rv;
+            memset(&hints, 0, sizeof hints);
+            hints.ai_family = AF_UNSPEC;
+            hints.ai_socktype = SOCK_STREAM;
+            if ((rv = getaddrinfo(first_word, PORT, &hints, &servinfo)) != 0) {
+                fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+                exit(1);
             }
+            for(p = servinfo; p != NULL; p = p->ai_next) {
+                if ((new_sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+                    perror("Error creating socket");
+                    continue;
+                }
+                // connect to the server
+                if (connect(new_sock_fd, p->ai_addr, p->ai_addrlen) < 0) {
+                    close(new_sock_fd);
+                    perror("Error connecting to server");
+                    continue;
+                }
+                // read buffer from the server after 'null' terminator
+                char *file_path = buffer + strlen(first_word) + 1;
+                if (ends_with(buffer, ".list")) {
+                    list_file_handler(file_path, new_sock_fd);
+                } else {
+                    file_handler(file_path, new_sock_fd);
+                }
+            }
+            freeaddrinfo(servinfo);
         }
     }
 }
@@ -234,7 +267,7 @@ int main(int argc, char *argv[]) {
         if (ends_with(remotePath, ".list")) {
             // the file is a list file
             // recursively download the file
-            list_file_handler(file_path, sockfd);
+            list_file_handler(remotePath, sockfd);
         }
     }
     else if (strcmp(operation, "POST") == 0) {
