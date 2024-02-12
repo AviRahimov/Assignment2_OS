@@ -12,9 +12,64 @@
 #include <signal.h>
 #include <poll.h>
 #include <fcntl.h>
+#include <math.h>
+#include <openssl/bio.h>
+#include <openssl/evp.h>
 
 #define PORT "8080"  // the port users will be connecting to
 #define BUFFER_SIZE 1024
+
+// Function to calculate the length of a decoded Base64 string
+int calcDecodeLength(const char* b64input, size_t len) {
+    int padding = 0;
+
+    // Check for trailing '=''s as padding
+    if (b64input[len - 1] == '=' && b64input[len - 2] == '=') // Last two characters are =
+        padding = 2;
+    else if (b64input[len - 1] == '=') // Last character is =
+        padding = 1;
+
+    return (int)len * 0.75 - padding;
+}
+
+// Function to encode binary data to Base64
+int Base64Encode(const char* message, char** buffer, size_t length) {
+    BIO *bio, *b64;
+    FILE* stream;
+    int encodedSize = 4*ceil((double)length/3);
+    *buffer = (char *)malloc(encodedSize+1);
+
+    stream = fmemopen(*buffer, encodedSize+1, "w");
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new_fp(stream, BIO_NOCLOSE);
+    bio = BIO_push(b64, bio);
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Ignore newlines - write everything in one line
+    BIO_write(bio, message, length);
+    BIO_flush(bio);
+    BIO_free_all(bio);
+    fclose(stream);
+
+    return (0); //success
+}
+
+// Function to decode Base64 to binary data
+int Base64Decode(char* b64message, unsigned char** buffer, size_t* length) {
+    BIO *bio, *b64;
+
+    int decodeLen = calcDecodeLength(b64message, *length);
+    *buffer = (unsigned char*)malloc(decodeLen + 1);
+
+    bio = BIO_new_mem_buf(b64message, -1);
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_push(b64, bio);
+
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); // Do not use newlines to flush buffer
+    *length = BIO_read(bio, *buffer, strlen(b64message));
+    (*buffer)[*length] = '\0'; // Not strictly necessary for binary data, but maintains consistency
+
+    BIO_free_all(bio);
+    return 0; // Success
+}
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
@@ -180,7 +235,7 @@ void list_file_handler(char *file_path) {
         pfds[i].events = POLLIN;
         // send the GET request
         char *file_path = strstr(line, " ") + 1;
-        
+
         printf("Sending GET request for: %s\n", file_path);
         snprintf(buffer, BUFFER_SIZE, "GET %s\r\n\r\n", file_path);
         if (write(sockfd, buffer, strlen(buffer)) < 0) {
@@ -224,23 +279,53 @@ void list_file_handler(char *file_path) {
 // post request handler
 // this function will send a post request to the server
 void post_request_handler (char * file_path, int sock_fd) {
-    char buffer [BUFFER_SIZE];
-    int numbytes;
-    printf("Sending POST request for: %s\n", file_path);
-    snprintf(buffer, BUFFER_SIZE, "POST %s\r\n\r\n", file_path);
+    char buffer[BUFFER_SIZE];
+     // Open the file for reading
+    int file = open(file_path, O_RDONLY);
+    if (file == -1) {
+        perror("Error opening file");
+        exit(1);
+    }
+
+    // Prepare and send the POST request line
+    snprintf(buffer, BUFFER_SIZE, "POST %s\r\n", file_path);
     if (write(sock_fd, buffer, strlen(buffer)) < 0) {
-        perror("Error writing to socket");
+        perror("Error writing initial POST line to socket");
+        close(file);
         exit(1);
     }
-    printf("POST request sent.\n");
-    // read the response from the server
-    numbytes = recv(sock_fd, buffer, BUFFER_SIZE-1, 0);
-    if (numbytes < 0) {
-        perror("recv");
+
+    // Initialize buffer for reading file content
+    char fileBuffer[BUFFER_SIZE];
+    size_t bytesRead;
+    while ((bytesRead = read(file, fileBuffer, BUFFER_SIZE - 1)) > 0) {
+        size_t encodedSize;
+        char* encodedContent;
+        fileBuffer[bytesRead] = '\0'; // Null-terminate the buffer
+        Base64Encode((const char*)fileBuffer, &encodedContent, bytesRead);
+        encodedSize = strlen(encodedContent);
+        printf("Sending chunk of size %zu\n", encodedSize);
+
+        // Directly write the encoded content to the socket
+        if (write(sock_fd, encodedContent, encodedSize) < 0) {
+            perror("Error writing encoded chunk to socket");
+            close(file);
+            free(encodedContent);
+            exit(1);
+        }
+
+        // Free the encoded content after sending
+        free(encodedContent);
+    }
+
+    // Send the final CRLF to indicate the end of the request
+    if (write(sock_fd, "\r\n\r\n", 4) < 0) {
+        perror("Error writing final CRLF to socket");
+        close(file);
         exit(1);
     }
-    buffer[numbytes] = '\0';
-    printf("Received response: %s\n", buffer);
+
+    close(file); // Close the file after sending all chunks
 }
 
 int main(int argc, char *argv[]) {
