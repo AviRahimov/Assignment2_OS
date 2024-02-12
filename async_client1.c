@@ -64,8 +64,9 @@ void file_handler (char * file_path, int sock_fd) {
     }
     printf("GET request sent.\n");
     // read the response from the server and write it to the file in chunks loop
-    FILE *file = fopen(file_path, "w");
-    if (file == NULL) {
+    // open the file for writing, and enable creation if it doesn't exist
+    int file_fd = open(file_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (file_fd < 0) {
         perror("Error opening file");
         exit(1);
     }
@@ -79,12 +80,12 @@ void file_handler (char * file_path, int sock_fd) {
             break;
         }
         buffer[numbytes] = '\0';
-        if (fwrite(buffer, 1, numbytes, file) < 0) {
+        if (write(file_fd, buffer, numbytes) < 0) {
             perror("Error writing to file");
             exit(1);
         }
     }
-    fclose(file);
+    close(file_fd);
     printf("File downloaded.\n");
 }
 
@@ -99,8 +100,8 @@ void list_file_handler(char *file_path, int sock_fd) {
     char buffer[BUFFER_SIZE];
     int timeout = 5000; // Timeout in milliseconds
 
-    // Open the file
-    int file_fd = open(file_path, O_RDONLY);
+    // Open the file, enable creation if it doesn't exist
+    int file_fd = open(file_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
     if (file_fd < 0) {
         perror("Error opening file");
         exit(1);
@@ -111,59 +112,43 @@ void list_file_handler(char *file_path, int sock_fd) {
     pfds[1].fd = sock_fd;
     pfds[1].events = POLLIN;
 
-    printf("Sending GET request for: %s\n", file_path);
-    snprintf(buffer, sizeof(buffer), "GET %s\r\n\r\n", file_path);
-    if (write(sock_fd, buffer, strlen(buffer)) < 0) {
-        perror("Error writing to socket");
-        exit(1);
-    }
-    printf("GET request sent.\n");
-
-    // Wait for events on the sockets with poll
-    int poll_count = poll(pfds, 2, timeout);
-    if (poll_count == -1) {
-        perror("poll");
-        exit(1);
-    }
-
-    if (poll_count == 0) {
-        printf("Timeout occurred! No data after %d milliseconds.\n", timeout);
-    } else {
-        // Check if there's incoming data on the socket
-        if (pfds[1].revents & POLLIN) {
-            int numbytes = recv(sock_fd, buffer, sizeof(buffer)-1, 0);
-            if (numbytes < 0) {
-                perror("recv");
-                exit(1);
-            }
-            buffer[numbytes] = '\0';
-            printf("Received response: %s\n", buffer);
+    // read the file line by line and send a get request for each line
+    while (1) {
+        int numbytes;
+        int poll_count = poll(pfds, 2, timeout);
+        if (poll_count < 0) {
+            perror("poll");
+            exit(1);
         }
-
-        // Check if the file is ready and is a list file
-        if (pfds[0].revents & POLLIN && ends_with(file_path, ".list")) {
-            // Read the list file contents
-            int bytes_read = read(file_fd, buffer, sizeof(buffer)-1);
-            if (bytes_read < 0) {
+        if (poll_count == 0) {
+            printf("Timeout occurred! No data after 5 seconds.\n");
+            break;
+        }
+        if (pfds[0].revents & POLLIN) {
+            numbytes = read(file_fd, buffer, BUFFER_SIZE-1);
+            if (numbytes < 0) {
                 perror("read");
                 exit(1);
             }
-            buffer[bytes_read] = '\0';
-            // Assuming the list file contains file paths separated by newlines
-            char *line = strtok(buffer, "\n");
-            while (line != NULL) {
-                // Recursive call to process each file listed in the list file
-                if (ends_with(line, ".list")) {
-                    list_file_handler(line, sock_fd); // Recursive call for another list file
-                } else {
-                    file_handler(line, sock_fd); // Call file_handler for a regular file
-                }
-                line = strtok(NULL, "\n");
+            if (numbytes == 0) {
+                break;
+            }
+            buffer[numbytes] = '\0';
+            // remove the newline character
+            buffer[numbytes-1] = '\0';
+            printf("Received file path: %s\n", buffer);
+            if (ends_with(buffer, ".list")) {
+                // read the first word in the file
+                char *first_word = strtok(buffer, " ");
+                // create new socket file using open for the new host name, but use the same port
+                // TO DO
+                // ....
+                list_file_handler(buffer, sock_fd);
+            } else {
+                file_handler(buffer, sock_fd);
             }
         }
     }
-
-    close(file_fd); // Close the file descriptor
 }
 
 // post request handler
@@ -244,57 +229,16 @@ int main(int argc, char *argv[]) {
     freeaddrinfo(servinfo); // all done with this structure
 
     if (strcmp(operation, "GET") == 0) {
-        file_path = remotePath;
-        printf("Sending GET request for: %s\n", file_path);
-        snprintf(buffer, BUFFER_SIZE, "GET %s\r\n\r\n", file_path);
-        if (write(sockfd, buffer, strlen(buffer)) < 0) {
-            perror("Error writing to socket");
-            exit(1);
-        }
-        printf("GET request sent.\n");
-        // read the response from the server
-        numbytes = recv(sockfd, buffer, BUFFER_SIZE-1, 0);
-        if (numbytes < 0) {
-            perror("recv");
-            exit(1);
-        }
-        buffer[numbytes] = '\0';
-        printf("Received response: %s\n", buffer);
-        // read the response from the server
-        numbytes = recv(new_fd, buffer, BUFFER_SIZE-1, 0);
-        if (numbytes < 0) {
-            perror("recv");
-            exit(1);
-        }
-        buffer[numbytes] = '\0';
+        file_handler(remotePath, sockfd);
         // check if the file is a regular file
-        if (ends_with(file_path, ".list")) {
+        if (ends_with(remotePath, ".list")) {
             // the file is a list file
             // recursively download the file
             list_file_handler(file_path, sockfd);
-        } else {
-            // the file is a regular file
-            // download the file
-            file_handler(file_path, sockfd);
         }
     }
     else if (strcmp(operation, "POST") == 0) {
-        file_path = remotePath;
-        printf("Sending POST request for: %s\n", file_path);
-        snprintf(buffer, BUFFER_SIZE, "POST %s\r\n\r\n", file_path);
-        if (write(sockfd, buffer, strlen(buffer)) < 0) {
-            perror("Error writing to socket");
-            exit(1);
-        }
-        printf("POST request sent.\n");
-        // read the response from the server
-        numbytes = recv(sockfd, buffer, BUFFER_SIZE-1, 0);
-        if (numbytes < 0) {
-            perror("recv");
-            exit(1);
-        }
-        buffer[numbytes] = '\0';
-        printf("Received response: %s\n", buffer);
+        post_request_handler(remotePath, sockfd);
     } 
     else {
         printf("Invalid operation\n");
