@@ -180,6 +180,7 @@ void list_file_handler(char *file_path) {
         pfds[i].events = POLLIN;
         // send the GET request
         char *file_path = strstr(line, " ") + 1;
+        
         printf("Sending GET request for: %s\n", file_path);
         snprintf(buffer, BUFFER_SIZE, "GET %s\r\n\r\n", file_path);
         if (write(sockfd, buffer, strlen(buffer)) < 0) {
@@ -187,11 +188,10 @@ void list_file_handler(char *file_path) {
             exit(1);
         }
         // create a new file for writing
-        files[i] = open(line, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+        files[i] = open(file_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
         i++;
     }
     fclose(file);
-    int poll_count = poll(pfds, lines, 1000); // 1 second timeout
     while (poll(pfds, lines, 1000) > 0) {
         for (int i = 0; i < lines; i++) {
             if (pfds[i].revents & POLLIN) {
@@ -202,6 +202,11 @@ void list_file_handler(char *file_path) {
                         perror("Error writing to file");
                         exit(1);
                     }
+                }
+                else if (numbytes == 0) {
+                    // close the socket
+                    close(pfds[i].fd);
+                    pfds[i].fd = -1;
                 }
             }
         }
