@@ -36,13 +36,13 @@ MYSIMPLEHTTP is a very simplified version of the HTTP protocol, supporting only 
 
 ### Server
 
-- The server should support multiple simultaneous connections using multi-process synchronization.
-- It must handle GET and POST requests according to the MYSIMPLEHTTP protocol.
-- Synchronization is crucial to prevent concurrent access issues. Use `fcntl(2)` for file locking.
+- The server support multiple simultaneous connections using multi-process synchronization.
+- It handle GET and POST requests according to the MYSIMPLEHTTP protocol.
+- Synchronization is crucial to prevent concurrent access issues. We are using `fcntl(2)` function for file locking.
 
 ### Client
 
-- Develop a simple client for testing the server functionality. This client is essential for demonstrating the server's ability to handle requests correctly but will not be submitted as part of this assignment.
+- Simple client for testing the server functionality. This client is essential for demonstrating the server's ability to handle requests correctly.
 
 ## How to Compile and Run
 
