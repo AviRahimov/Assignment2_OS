@@ -55,11 +55,11 @@ int Base64Encode(const char* message, char** buffer, size_t length) {
 }
 
 // Function to decode Base64 to binary data
-int Base64Decode(char* b64message, unsigned char** buffer, size_t* length) {
+int Base64Decode(char* b64message, char** buffer, size_t* length) {
     BIO *bio, *b64;
 
     int decodeLen = calcDecodeLength(b64message, *length);
-    *buffer = (unsigned char*)malloc(decodeLen + 1);
+    *buffer = (char*)malloc(decodeLen + 1);
 
     bio = BIO_new_mem_buf(b64message, -1);
     b64 = BIO_new(BIO_f_base64());
@@ -124,11 +124,13 @@ void file_handler (char * file_path, int sock_fd) {
         }
         buffer[numbytes] = '\0';
         char* decodedContent;
-        if(Base64Decode((const char*)buffer, &decodedContent, numbytes) != 0){
+        size_t * decodedLength;
+        *decodedLength = numbytes;
+        if(Base64Decode((char*)buffer, &decodedContent, decodedLength) != 0){
             perror("Error decoding the content of the file");
             exit(1);
         }
-        if (write(file_fd, buffer, numbytes) < 0) {
+        if (write(file_fd, decodedContent, *decodedLength) < 0) {
             perror("Error writing to file");
             exit(1);
         }
@@ -208,6 +210,29 @@ int create_socket_from_line(const char *line) {
     return sockfd;
 }
 
+bool handle_response(char *line) {
+    // Trim trailing whitespace (including \r and \n) from the line
+    char* end;
+    // Find the end of the string
+    end = line + strlen(line) - 1;
+    // Loop backwards until you hit the first non-whitespace character
+    while(end > line && (*end == '\r' || *end == '\n' || *end == ' ')) {
+        *end = '\0'; // Replace it with a null terminator to trim it
+        end--;
+    }
+
+    // Now perform the comparisons without including \r\n
+    if (strcmp(line, "404 Not Found") == 0) {
+        printf("File not found\n");
+        return false;
+    } else if (strcmp(line, "500 Internal Server Error") == 0) {
+        printf("Internal Server Error\n");
+        return false;
+    }
+    return true;
+}
+
+
 // list file handler
 // this funciton will sends a get request to the server for each line in the file
 // that represent a file path to be downloaded, and then download the file
@@ -231,6 +256,9 @@ void list_file_handler(char *file_path) {
     int files [BUFFER_SIZE];
     int i = 0;
     while (fgets(line, sizeof(line), file)) {
+        if (!handle_response(line)) {
+            return;
+        }
         int sockfd = create_socket_from_line(line);
         if (sockfd < 0) {
             // Error creating socket
@@ -256,10 +284,17 @@ void list_file_handler(char *file_path) {
     while (poll(pfds, lines, 1000) > 0) {
         for (int i = 0; i < lines; i++) {
             if (pfds[i].revents & POLLIN) {
-                int numbytes = recv(pfds[i].fd, buffer, BUFFER_SIZE, 0);
+                int numbytes = recv(pfds[i].fd, buffer, BUFFER_SIZE -1, 0);
                 if (numbytes > 0) {
+                    char * decodedContent;
+                    size_t * decodedLength;
+                    *decodedLength = numbytes;
+                    if(Base64Decode((char*)buffer, &decodedContent, decodedLength) != 0){
+                        perror("Error decoding the content of the file");
+                        exit(1);
+                    }
                     // write the response to the file
-                    if (write(files[i], buffer, numbytes) < 0) {
+                    if (write(files[i], decodedContent, *decodedLength) < 0) {
                         perror("Error writing to file");
                         exit(1);
                     }
