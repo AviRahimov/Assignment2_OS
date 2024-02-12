@@ -16,20 +16,6 @@
 #define PORT "8080"  // the port users will be connecting to
 #define BUFFER_SIZE 1024
 
-#define BACKLOG 100	 // how many pending connections queue will hold
-
-void sigchld_handler(int s)
-{
-	(void)s; // quiet unused variable warning
-
-	// waitpid() might overwrite errno, so we save and restore it:
-	int saved_errno = errno;
-
-	while(waitpid(-1, NULL, WNOHANG) > 0);
-
-	errno = saved_errno;
-}
-
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
@@ -80,11 +66,7 @@ void file_handler (char * file_path, int sock_fd) {
             break;
         }
         buffer[numbytes] = '\0';
-        // if buffer ends with "HTTP/1.1 200 OK <CRLF><CRLF>" then remove it from the buffer and break
-        if (ends_with(buffer, "\nHTTP/1.1 200 OK\r\n\r\n")) {
-            buffer[numbytes-19] = '\0';
-            numbytes -= 19;
-        }
+        // TO DO: add base64 decoding here
         if (write(file_fd, buffer, numbytes) < 0) {
             perror("Error writing to file");
             exit(1);
@@ -100,88 +82,26 @@ void file_handler (char * file_path, int sock_fd) {
 // using POLL for async IO
 // if the file is a regular file, it will be downloaded using the file_handler function
 // if not, it will be recursively downloaded using the list_file_handler function
-void list_file_handler(char *file_path, int sock_fd) {
-    struct pollfd pfds[2];
-    char buffer[BUFFER_SIZE];
-    int timeout = 5000; // Timeout in milliseconds
+void list_file_handler(char *file_path) {
 
-    // Open the file, enable creation if it doesn't exist
-    int file_fd = open(file_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    if (file_fd < 0) {
-        perror("Error opening file");
-        exit(1);
-    }
+    file1   scok_server1 -> read(sock_server1) -> write(file1 - copy of file1 in the client)
+    file2   sock_server2   
+    file3   sock_server3
 
-    pfds[0].fd = file_fd;
-    pfds[0].events = POLLIN;
-    pfds[1].fd = sock_fd;
-    pfds[1].events = POLLIN;
+    pfds = pollfd[inf]; // count \n in the file - add a helper function to count the number of lines in the file
+    test1\ntest2\ntest3
 
-    // read the file line by line and send a get request for each line
-    while (1) {
-        int numbytes;
-        int poll_count = poll(pfds, 2, timeout);
-        if (poll_count < 0) {
-            perror("poll");
-            exit(1);
-        }
-        if (poll_count == 0) {
-            printf("Timeout occurred! No data after 5 seconds.\n");
-            break;
-        }
-        if (pfds[0].revents & POLLIN) {
-            numbytes = read(file_fd, buffer, BUFFER_SIZE-1);
-            if (numbytes < 0) {
-                perror("read");
-                exit(1);
-            }
-            if (numbytes == 0) {
-                break;
-            }
-            buffer[numbytes] = '\0';
-            // remove the newline character
-            buffer[numbytes-1] = '\0';
-            printf("Received file path: %s\n", buffer);
-            // / create new socket file using open for the new host name, but use the same port
-            // TO DO
-            // ....
-            // clone the socket file descriptor and connect to the new host
-            close (sock_fd);
-            int new_sock_fd = sock_fd;
-            char *first_word = strtok(buffer, " ");
-            // connect to the server which is address in the first word of the file
-            // using DNS lookup to get the address
-            struct addrinfo hints, *servinfo, *p;
-            int rv;
-            memset(&hints, 0, sizeof hints);
-            hints.ai_family = AF_UNSPEC;
-            hints.ai_socktype = SOCK_STREAM;
-            if ((rv = getaddrinfo(first_word, PORT, &hints, &servinfo)) != 0) {
-                fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-                exit(1);
-            }
-            for(p = servinfo; p != NULL; p = p->ai_next) {
-                if ((new_sock_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-                    perror("Error creating socket");
-                    continue;
-                }
-                // connect to the server
-                if (connect(new_sock_fd, p->ai_addr, p->ai_addrlen) < 0) {
-                    close(new_sock_fd);
-                    perror("Error connecting to server");
-                    continue;
-                }
-                // read buffer from the server after 'null' terminator
-                char *file_path = buffer + strlen(first_word) + 1;
-                if (ends_with(buffer, ".list")) {
-                    list_file_handler(file_path, new_sock_fd);
-                } else {
-                    file_handler(file_path, new_sock_fd);
-                }
-            }
-            freeaddrinfo(servinfo);
-        }
-    }
+    read the file line by line
+    for each line, create a new socket where the first argument is the host name and the second argument is the file path
+    link each socket to poll array
+
+    poll_count (pfds, POLLIN) // with timeout 1 seconds
+    poll_count == 0 ==> no data to read for any of the sockets
+    poll_count > 0 ==> data to read for at least one of the sockets
+    for 1....pfds.size()
+        if pfds[i].revents & POLLIN
+            read(pfds[i].fd, buffer, BUFFER_SIZE-1)
+            write(file_fd, buffer, numbytes)
 }
 
 // post request handler
