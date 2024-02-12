@@ -76,6 +76,77 @@ void file_handler (char * file_path, int sock_fd) {
     printf("File downloaded.\n");
 }
 
+int count_lines(const char *file_path) {
+    FILE *file = fopen(file_path, "r");
+    if (!file) {
+        perror("Error opening file for line count");
+        return -1;
+    }
+    int lines = 0;
+    int ch;
+    while (EOF != (ch = getc(file))) {
+        if (ch == '\n') {
+            lines++;
+        }
+    }
+    fclose(file);
+    return (lines + 1);
+}
+
+// Helper function to establish a socket connection based on a parsed line
+int create_socket_from_line(const char *line) {
+    char host[1024]; // Adjust size as necessary
+    struct hostent *server;
+    struct sockaddr_in serv_addr;
+    int sockfd;
+    // convert PORT to int
+    int portno = atoi(PORT);
+
+    // Copy the line to a local buffer to avoid modifying the original line with strtok
+    char buffer[1024];
+    strncpy(buffer, line, sizeof(buffer) - 1);
+    buffer[sizeof(buffer) - 1] = '\0';
+
+    // Extract the host part
+    char *host_part = strtok(buffer, " ");
+    if (!host_part) {
+        perror("Invalid line format: Host missing");
+        return -1;
+    }
+
+    // Creating a socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Cannot create socket");
+        return -1;
+    }
+
+    // Getting the host address
+    server = gethostbyname(host_part);
+    if (!server) {
+        fprintf(stderr, "ERROR, no such host\n");
+        close(sockfd);
+        return -1;
+    }
+
+    // Setting up the server address structure
+    memset((char *)&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
+    serv_addr.sin_port = htons(portno);
+
+    // Connecting to the server
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("ERROR connecting");
+        close(sockfd);
+        return -1;
+    }
+
+    // At this point, the socket is created and connected to the server.
+    // You can now use `sockfd` to send and receive data.
+    return sockfd;
+}
+
 // list file handler
 // this funciton will sends a get request to the server for each line in the file
 // that represent a file path to be downloaded, and then download the file
@@ -83,25 +154,66 @@ void file_handler (char * file_path, int sock_fd) {
 // if the file is a regular file, it will be downloaded using the file_handler function
 // if not, it will be recursively downloaded using the list_file_handler function
 void list_file_handler(char *file_path) {
+    int lines = count_lines(file_path);
+    char buffer[BUFFER_SIZE];
+    if (lines <= 0) {
+        return;
+    }
+    struct pollfd pfds[lines];
+    int file_fd = open(file_path, O_RDONLY);
+    if (file_fd < 0) {
+        perror("Error opening file");
+        return;
+    }
+    FILE *file = fopen(file_path, "r");
+    char line[BUFFER_SIZE];
+    int files [BUFFER_SIZE];
+    int i = 0;
+    while (fgets(line, sizeof(line), file)) {
+        int sockfd = create_socket_from_line(line);
+        if (sockfd < 0) {
+            // Error creating socket
+            perror("Error creating socket");
+            exit(1);
+        }
+        pfds[i].fd = sockfd;
+        pfds[i].events = POLLIN;
+        // send the GET request
+        char *file_path = strstr(line, " ") + 1;
+        printf("Sending GET request for: %s\n", file_path);
+        snprintf(buffer, BUFFER_SIZE, "GET %s\r\n\r\n", file_path);
+        if (write(sockfd, buffer, strlen(buffer)) < 0) {
+            perror("Error writing to socket");
+            exit(1);
+        }
+        // create a new file for writing
+        files[i] = open(line, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+        i++;
+    }
+    fclose(file);
+    int poll_count = poll(pfds, lines, 1000); // 1 second timeout
+    while (poll(pfds, lines, 1000) > 0) {
+        for (int i = 0; i < lines; i++) {
+            if (pfds[i].revents & POLLIN) {
+                int numbytes = recv(pfds[i].fd, buffer, BUFFER_SIZE, 0);
+                if (numbytes > 0) {
+                    // write the response to the file
+                    if (write(files[i], buffer, numbytes) < 0) {
+                        perror("Error writing to file");
+                        exit(1);
+                    }
+                }
+            }
+        }
+    }
 
-    file1   scok_server1 -> read(sock_server1) -> write(file1 - copy of file1 in the client)
-    file2   sock_server2   
-    file3   sock_server3
-
-    pfds = pollfd[inf]; // count \n in the file - add a helper function to count the number of lines in the file
-    test1\ntest2\ntest3
-
-    read the file line by line
-    for each line, create a new socket where the first argument is the host name and the second argument is the file path
-    link each socket to poll array
-
-    poll_count (pfds, POLLIN) // with timeout 1 seconds
-    poll_count == 0 ==> no data to read for any of the sockets
-    poll_count > 0 ==> data to read for at least one of the sockets
-    for 1....pfds.size()
-        if pfds[i].revents & POLLIN
-            read(pfds[i].fd, buffer, BUFFER_SIZE-1)
-            write(file_fd, buffer, numbytes)
+    // Close all sockets
+    for (int i = 0; i < lines; i++) {
+        if (pfds[i].fd >= 0) {
+            close(pfds[i].fd);
+        }
+        close(files[i]);
+    }
 }
 
 // post request handler
@@ -187,7 +299,7 @@ int main(int argc, char *argv[]) {
         if (ends_with(remotePath, ".list")) {
             // the file is a list file
             // recursively download the file
-            list_file_handler(remotePath, sockfd);
+            list_file_handler(remotePath);
         }
     }
     else if (strcmp(operation, "POST") == 0) {
