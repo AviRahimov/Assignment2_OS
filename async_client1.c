@@ -6,6 +6,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <openssl/bio.h> 
+#include <openssl/evp.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <sys/wait.h>
@@ -15,6 +17,58 @@
 
 #define PORT "8080"  // the port users will be connecting to
 #define BUFFER_SIZE 1024
+
+// Function to calculate the length of a decoded Base64 string
+int calcDecodeLength(const char* b64input, size_t len) {
+    int padding = 0;
+
+    // Check for trailing '=''s as padding
+    if (b64input[len - 1] == '=' && b64input[len - 2] == '=') // Last two characters are =
+        padding = 2;
+    else if (b64input[len - 1] == '=') // Last character is =
+        padding = 1;
+
+    return (int)len * 0.75 - padding;
+}
+
+// Function to encode binary data to Base64
+int Base64Encode(const char* message, char** buffer, size_t length) {
+    BIO *bio, *b64;
+    FILE* stream;
+    int encodedSize = 4*ceil((double)length/3);
+    *buffer = (char *)malloc(encodedSize+1);
+
+    stream = fmemopen(*buffer, encodedSize+1, "w");
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new_fp(stream, BIO_NOCLOSE);
+    bio = BIO_push(b64, bio);
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); //Ignore newlines - write everything in one line
+    BIO_write(bio, message, length);
+    BIO_flush(bio);
+    BIO_free_all(bio);
+    fclose(stream);
+
+    return (0); //success
+}
+
+// Function to decode Base64 to binary data
+int Base64Decode(char* b64message, unsigned char** buffer, size_t* length) {
+    BIO *bio, *b64;
+
+    int decodeLen = calcDecodeLength(b64message, *length);
+    *buffer = (unsigned char*)malloc(decodeLen + 1);
+
+    bio = BIO_new_mem_buf(b64message, -1);
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_push(b64, bio);
+
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); // Do not use newlines to flush buffer
+    *length = BIO_read(bio, *buffer, strlen(b64message));
+    (*buffer)[*length] = '\0'; // Not strictly necessary for binary data, but maintains consistency
+
+    BIO_free_all(bio);
+    return 0; // Success
+}
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
@@ -66,7 +120,11 @@ void file_handler (char * file_path, int sock_fd) {
             break;
         }
         buffer[numbytes] = '\0';
-        // TO DO: add base64 decoding here
+        char* decodedContent;
+        if(Base64Decode((const char*)buffer, &decodedContent, numbytes) != 0){
+            perror("Error decoding the content of the file");
+            exit(1);
+        }
         if (write(file_fd, buffer, numbytes) < 0) {
             perror("Error writing to file");
             exit(1);
