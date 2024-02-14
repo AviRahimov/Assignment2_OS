@@ -17,6 +17,7 @@
 #include <math.h>
 #include <openssl/bio.h>
 #include <openssl/evp.h>
+#include <stdbool.h>
 
 #define PORT "8080"  // the port users will be connecting to
 #define BUFFER_SIZE 1024
@@ -124,13 +125,13 @@ void file_handler (char * file_path, int sock_fd) {
         }
         buffer[numbytes] = '\0';
         char* decodedContent;
-        size_t * decodedLength;
-        *decodedLength = numbytes;
-        if(Base64Decode((char*)buffer, &decodedContent, decodedLength) != 0){
+        size_t decodedLength;
+        decodedLength = numbytes;
+        if(Base64Decode((char*)buffer, &decodedContent, &decodedLength) != 0){
             perror("Error decoding the content of the file");
             exit(1);
         }
-        if (write(file_fd, decodedContent, *decodedLength) < 0) {
+        if (write(file_fd, decodedContent, decodedLength) < 0) {
             perror("Error writing to file");
             exit(1);
         }
@@ -287,14 +288,14 @@ void list_file_handler(char *file_path) {
                 int numbytes = recv(pfds[i].fd, buffer, BUFFER_SIZE -1, 0);
                 if (numbytes > 0) {
                     char * decodedContent;
-                    size_t * decodedLength;
-                    *decodedLength = numbytes;
-                    if(Base64Decode((char*)buffer, &decodedContent, decodedLength) != 0){
+                    size_t decodedLength;
+                    decodedLength = numbytes;
+                    if(Base64Decode((char*)buffer, &decodedContent, &decodedLength) != 0){
                         perror("Error decoding the content of the file");
                         exit(1);
                     }
                     // write the response to the file
-                    if (write(files[i], decodedContent, *decodedLength) < 0) {
+                    if (write(files[i], decodedContent, decodedLength) < 0) {
                         perror("Error writing to file");
                         exit(1);
                     }
