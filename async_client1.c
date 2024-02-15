@@ -118,6 +118,17 @@ bool ends_with(const char *str, const char *suffix)
     return strncmp(str + len_str - len_suffix, suffix, len_suffix) == 0;
 }
 
+bool handle_response(char *line) {
+    if (strstr(line, "500 Internal Server Error") != NULL) {
+        printf("File found.\n");
+    } else
+    if (strstr(line, "404 Not Found") != NULL) {
+        printf("File not found.\n");
+        return false;
+    }
+    return true;
+}
+
 // this function will handle the file download
 // without using POLL
 void file_handler (char * file_path, int sock_fd) {
@@ -145,6 +156,9 @@ void file_handler (char * file_path, int sock_fd) {
         }
         if (numbytes == 0) {
             break;
+        }
+        if (!handle_response(buffer)) {
+            return;
         }
         //buffer[numbytes] = '\0';
         char* decodedContent;
@@ -233,29 +247,6 @@ int create_socket_from_line(const char *line) {
     return sockfd;
 }
 
-bool handle_response(char *line) {
-    // Trim trailing whitespace (including \r and \n) from the line
-    char* end;
-    // Find the end of the string
-    end = line + strlen(line) - 1;
-    // Loop backwards until you hit the first non-whitespace character
-    while(end > line && (*end == '\r' || *end == '\n' || *end == ' ')) {
-        *end = '\0'; // Replace it with a null terminator to trim it
-        end--;
-    }
-
-    // Now perform the comparisons without including \r\n
-    if (strcmp(line, "404 Not Found") == 0) {
-        printf("File not found\n");
-        return false;
-    } else if (strcmp(line, "500 Internal Server Error") == 0) {
-        printf("Internal Server Error\n");
-        return false;
-    }
-    return true;
-}
-
-
 // list file handler
 // this funciton will sends a get request to the server for each line in the file
 // that represent a file path to be downloaded, and then download the file
@@ -279,9 +270,6 @@ void list_file_handler(char *file_path) {
     int files [BUFFER_SIZE];
     int i = 0;
     while (fgets(line, sizeof(line), file)) {
-        if (!handle_response(line)) {
-            return;
-        }
         int sockfd = create_socket_from_line(line);
         if (sockfd < 0) {
             // Error creating socket
