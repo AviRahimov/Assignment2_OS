@@ -58,20 +58,43 @@ int Base64Encode(const char* message, char** buffer, size_t length) {
 // Function to decode Base64 to binary data
 int Base64Decode(char* b64message, char** buffer, size_t* length) {
     BIO *bio, *b64;
+    // Calculate the expected decode length based on the actual length of the Base64 input
+    int decodeLen = calcDecodeLength(b64message, * length);
+    *buffer = (char*)malloc(decodeLen + 1); // Allocate enough memory for the decoded data
+    if (*buffer == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return -1;
+    }
 
-    int decodeLen = calcDecodeLength(b64message, *length);
-    *buffer = (char*)malloc(decodeLen + 1);
+    FILE* stream = fmemopen(b64message, * length, "r"); // Use actual length of b64message
+    if (!stream) {
+        free(*buffer);
+        fprintf(stderr, "Failed to open stream\n");
+        return -2;
+    }
 
-    bio = BIO_new_mem_buf(b64message, -1);
     b64 = BIO_new(BIO_f_base64());
+    bio = BIO_new_fp(stream, BIO_NOCLOSE);
     bio = BIO_push(b64, bio);
-
     BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL); // Do not use newlines to flush buffer
-    *length = BIO_read(bio, *buffer, strlen(b64message));
-    (*buffer)[*length] = '\0'; // Not strictly necessary for binary data, but maintains consistency
+
+    // Perform the decoding
+    int len = BIO_read(bio, *buffer, decodeLen); // Attempt to read up to decodeLen bytes
+    if (len <= 0) {
+        free(*buffer);
+        BIO_free_all(bio);
+        fclose(stream);
+        fprintf(stderr, "Decoding failed\n");
+        return -3;
+    }
+
+    (*buffer)[len] = '\0'; // Null-terminate the decoded output
+    *length = len; // Update the actual length of the decoded data
 
     BIO_free_all(bio);
-    return 0; // Success
+    fclose(stream);
+
+    return 0; // Indicate success
 }
 
 // get sockaddr, IPv4 or IPv6:
@@ -115,7 +138,7 @@ void file_handler (char * file_path, int sock_fd) {
         exit(1);
     }
     while (1) {
-        numbytes = recv(sock_fd, buffer, BUFFER_SIZE-1, 0);
+        numbytes = recv(sock_fd, buffer, BUFFER_SIZE, 0);
         if (numbytes < 0) {
             perror("recv");
             exit(1);
@@ -123,10 +146,9 @@ void file_handler (char * file_path, int sock_fd) {
         if (numbytes == 0) {
             break;
         }
-        buffer[numbytes] = '\0';
+        //buffer[numbytes] = '\0';
         char* decodedContent;
-        size_t decodedLength;
-        decodedLength = numbytes;
+        size_t decodedLength = numbytes;
         if(Base64Decode((char*)buffer, &decodedContent, &decodedLength) != 0){
             perror("Error decoding the content of the file");
             exit(1);
@@ -285,7 +307,7 @@ void list_file_handler(char *file_path) {
     while (poll(pfds, lines, 1000) > 0) {
         for (int i = 0; i < lines; i++) {
             if (pfds[i].revents & POLLIN) {
-                int numbytes = recv(pfds[i].fd, buffer, BUFFER_SIZE -1, 0);
+                int numbytes = recv(pfds[i].fd, buffer, BUFFER_SIZE, 0);
                 if (numbytes > 0) {
                     char * decodedContent;
                     size_t decodedLength;
@@ -320,17 +342,17 @@ void list_file_handler(char *file_path) {
 
 // post request handler
 // this function will send a post request to the server
-void post_request_handler (char * file_path, int sock_fd) {
+void post_request_handler (char * local_file_path, char * remote_path, int sock_fd) {
     char buffer[BUFFER_SIZE];
      // Open the file for reading
-    int file = open(file_path, O_RDONLY);
+    int file = open(local_file_path, O_RDONLY);
     if (file == -1) {
         perror("Error opening file");
         exit(1);
     }
 
     // Prepare and send the POST request line
-    snprintf(buffer, BUFFER_SIZE, "POST %s\r\n", file_path);
+    snprintf(buffer, BUFFER_SIZE, "POST %s\r\n", remote_path);
     if (write(sock_fd, buffer, strlen(buffer)) < 0) {
         perror("Error writing initial POST line to socket");
         close(file);
@@ -435,7 +457,7 @@ int main(int argc, char *argv[]) {
         }
     }
     else if (strcmp(operation, "POST") == 0) {
-        post_request_handler(remotePath, sockfd);
+        post_request_handler(localPath, remotePath, sockfd);
     } 
     else {
         printf("Invalid operation\n");
