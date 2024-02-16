@@ -101,7 +101,7 @@ ASYNC I/O Client designed to facilitate downloading files, especially when deali
    ```bash
    gcc -o server server.c
 3. ```bash
-   ./server /files  
+   ./server files/ 
 
 
 #### Compiling the asynchronic Client
@@ -121,6 +121,7 @@ note that ubuntu_logo.jpg is just an example to picture file and can be replaced
 In the same terminal run the following command:
 1. ```bash
    async_client localhost GET list_of_files.list
-In 'list_of_files.list' there is 3 txt files:
-test1.txt , test2.txt, test3.txt
+Note that inside "list_of_files.list” there is a string encoded in base64 that stores the client IP and the txt files.
+
+
 
