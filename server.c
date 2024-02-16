@@ -129,7 +129,7 @@ void handle_client(int socket_client, char * home_path) {
             exit(1);
         }
         while (1) {
-            len = read(fd, buffer, sizeof(buffer) - 1);
+            len = read(fd, buffer, sizeof(buffer));
             if (len <= 0) break; // End of transmission
             //Base64Encode(buffer, &encoded_str);
             // len = strlen(buffer);

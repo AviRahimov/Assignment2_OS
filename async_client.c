@@ -280,6 +280,15 @@ void list_file_handler(char *file_path) {
         pfds[i].events = POLLIN;
         // send the GET request
         char *file_path = strstr(line, " ") + 1;
+        // if the file path ends with a newline, remove it
+        if (file_path[strlen(file_path) - 1] == '\n') {
+            file_path[strlen(file_path) - 1] = '\0';
+        }
+        else
+        {
+            file_path[strlen(file_path)] = '\0';
+        }
+        
 
         printf("Sending GET request for: %s\n", file_path);
         snprintf(buffer, BUFFER_SIZE, "GET %s\r\n\r\n", file_path);
