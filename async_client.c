@@ -18,6 +18,7 @@
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <stdbool.h>
+#include <sys/stat.h>
 
 #define PORT "8080"  // the port users will be connecting to
 #define BUFFER_SIZE 1024
@@ -143,6 +144,18 @@ void file_handler (char * file_path, int sock_fd) {
     printf("GET request sent.\n");
     // read the response from the server and write it to the file in chunks loop
     // open the file for writing, and enable creation if it doesn't exist
+    // makedir
+    char *dir = strdup(file_path);
+    char *last_slash = strrchr(dir, '/');
+    if (last_slash != NULL) {
+        *last_slash = '\0';
+        if (mkdir(dir, 0777) < 0) {
+            if (errno != EEXIST) {
+                perror("Error creating directory");
+                exit(1);
+            }
+        }
+    }
     int file_fd = open(file_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
     if (file_fd < 0) {
         perror("Error opening file");
@@ -296,8 +309,24 @@ void list_file_handler(char *file_path) {
             perror("Error writing to socket");
             exit(1);
         }
-        // create a new file for writing
+        // makedir
+        char *dir = strdup(file_path);
+        char *last_slash = strrchr(dir, '/');
+        if (last_slash) {
+            *last_slash = '\0';
+            if (mkdir(dir, 0777) < 0 && errno != EEXIST) {
+                perror("Error creating directory");
+                exit(1);
+            }
+        }
         files[i] = open(file_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+        // create a new file for writing
+        // enable creating folders
+        if (files[i] < 0) {
+            perror("Error creating file");
+            exit(1);
+        }
+        free(dir);
         i++;
     }
     fclose(file);

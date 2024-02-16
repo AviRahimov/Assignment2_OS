@@ -14,6 +14,7 @@
 #include <arpa/inet.h> // inet_ntop and inet_pton
 #include <netdb.h> // getnameinfo and getaddrinfo
 #include <fcntl.h> // fcntl
+#include <sys/stat.h> // mkdir
 
 
 # define PORT "8080" // Default port for the server
@@ -46,7 +47,15 @@ void handle_client(int socket_client, char * home_path) {
         strcat(file_path, home_path);
         strcat(file_path, path);
         printf("File path: %s\n", file_path);
-        // Achieve a write lock on the file using fcntl
+        // Achieve a write lock on the file using fcntl,and create the directory using mkdir
+        char * dir_path = (char *) malloc(strlen(file_path) + 1);
+        dir_path[0] = '\0';
+        strcat(dir_path, file_path);
+        char * last_slash = strrchr(dir_path, '/');
+        if (last_slash != NULL) {
+            *last_slash = '\0';
+            mkdir(dir_path, 0755);
+        }
         int fd = open(file_path, O_WRONLY | O_CREAT, 0644);
         // Return an error if the file does not exist (404 File Not Found)
         if (fd == -1) {
