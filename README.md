@@ -94,12 +94,14 @@ For a POST request:
 ASYNC I/O Client designed to facilitate downloading files, especially when dealing with .list files containing a list of files to download simultaneously. The client utilizes asynchronous I/O operations to handle multiple connections concurrently, ensuring efficient downloading.
 
 ## How to Compile and Run part B
-#### Compiling the Server
+#### Compiling and running the Server
 
 1. Open a terminal and navigate to the directory containing the `server.c` file.
 2. Run the following command to compile the server application:
    ```bash
-   gcc -o server server.c 
+   gcc -o server server.c
+3. ```bash
+   ./server /files  
 
 
 #### Compiling the asynchronic Client
@@ -110,3 +112,15 @@ ASYNC I/O Client designed to facilitate downloading files, especially when deali
 
 
 #### Running the asynchronic Client
+In the same terminal run the following command:
+1. ```bash
+   async_client localhost GET ubuntu_logo.jpg
+note that ubuntu_logo.jpg is just an example to picture file and can be replaced with any that can be converted to Base64.
+
+#### Run with files.list
+In the same terminal run the following command:
+1. ```bash
+   async_client localhost GET list_of_files.list
+In 'list_of_files.list' there is 3 txt files:
+test1.txt , test2.txt, test3.txt
+
