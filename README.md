@@ -90,10 +90,23 @@ For a POST request:
 - Use relative or absolute paths appropriately when specifying file locations for GET and POST operations.
 
 
+## Part B - ASYNC I/O Client
+ASYNC I/O Client designed to facilitate downloading files, especially when dealing with .list files containing a list of files to download simultaneously. The client utilizes asynchronous I/O operations to handle multiple connections concurrently, ensuring efficient downloading.
+
+## How to Compile and Run part B
+#### Compiling the Server
+
+1. Open a terminal and navigate to the directory containing the `server.c` file.
+2. Run the following command to compile the server application:
+   ```bash
+   gcc -o server server.c 
 
 
+#### Compiling the asynchronic Client
+1. In the same or a different terminal, navigate to the directory containing the `async_client.c` file.
+2. Compile the client application using the following command:
+    ```bash
+    gcc -o async_client async_client.c -lcrypto -lm
 
 
-
-
-
+#### Running the asynchronic Client
