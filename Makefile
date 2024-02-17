@@ -1,20 +1,13 @@
-CC=gcc
-# CFLAGS=-Wall
-LIBS=-lcrypto -lm
+.PHONY: all PartA PartB clean
 
-# Default target
-all: server client
+all: PartA PartB
 
-# Build server only
-server:
-	$(CC) $(CFLAGS) -o server server.c $(LIBS)
+PartA:
+	$(MAKE) -C PartA
 
-# Build client only
-client:
-	$(CC) $(CFLAGS) -o client client.c $(LIBS)
+PartB:
+	$(MAKE) -C PartB
 
-# Clean up binaries
 clean:
-	rm -f server client
-
-.PHONY: all server client clean
+	$(MAKE) -C PartA clean
+	$(MAKE) -C PartB clean
