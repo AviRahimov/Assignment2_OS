@@ -114,14 +114,28 @@ ASYNC I/O Client designed to facilitate downloading files, especially when deali
 #### Running the asynchronic Client
 In the same terminal run the following command:
 1. ```bash
-   async_client localhost GET ubuntu_logo.jpg
+   ./async_client localhost GET ubuntu_logo.jpg
 note that ubuntu_logo.jpg is just an example to picture file and can be replaced with any that can be converted to Base64.
 
 #### Run with files.list
 In the same terminal run the following command:
 1. ```bash
-   async_client localhost GET list_of_files.list
+   ./async_client localhost GET list_of_files.list
 Note that inside "list_of_files.list” there is a string encoded in base64 that stores the client IP and the txt files.
+
+If you do GET to hello.txt (which is txt file in files, inside there is a string encoded in base64), and then POST with this command:
+1. ```bash
+   ./async_client localhost POST hello.txt hello.txt
+   
+You are supposed to see in the client a txt file with the same name with "Hello World!" inside.
+
+#### Create a folder
+If you want to create a folder you can do this with this next command:
+1. ```bash
+   ./async_client localhost POST <name_of_folder>/ubuntu_logo.jpg ubuntu_logo.jpg
+This command will create a folder inside files and inside this folder you should see the jpg image.
+Note that you should replace "name_of_folder" with the name of folder you want to.
+Please be aware that the server is listen to files.
 
 
 
