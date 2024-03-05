@@ -137,5 +137,9 @@ This command will create a folder inside files and inside this folder you should
 Note that you should replace "name_of_folder" with the name of folder you want to.
 Please be aware that the server is listen to files.
 
+### Acknowledgments
+
+Thanks to all the contributors who have invested their time in improving this assignment and make it all work well:
+Jonatan boritsky, Avi rahimov, Avichay mazin.
 
 
